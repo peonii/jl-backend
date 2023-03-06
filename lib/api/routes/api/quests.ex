@@ -10,7 +10,8 @@ defmodule Api.Route.Quests do
   get "/" do
     auth = get_req_header(conn, "authorization")
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
       |> Repo.preload(:quests)
 
@@ -19,10 +20,26 @@ defmodule Api.Route.Quests do
     conn |> send_resp(200, Jason.encode!(quests))
   end
 
+  post "/" do
+    auth = get_req_header(conn, "authorization")
+
+    content = conn.body_params["content"]
+    reward = conn.body_params["reward"]
+
+    quest =
+      Team
+      |> Repo.get_by(password: Enum.at(auth, 0))
+      |> Ecto.build_assoc(:quests, content: content, reward: reward, type: "MAIN", complete: false)
+      |> Repo.insert()
+
+    conn |> send_resp(200, Jason.encode!(quest))
+  end
+
   get "/side" do
     auth = get_req_header(conn, "authorization")
 
-    has_side_quest = Team
+    has_side_quest =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
       |> Repo.preload(:quests)
       |> Map.get(:quests)
@@ -34,14 +51,16 @@ defmodule Api.Route.Quests do
   post "/side" do
     auth = get_req_header(conn, "authorization")
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
       |> Repo.preload(:quests)
 
     is_vetoed = DateTime.compare(team.last_veto, DateTime.utc_now()) == :gt
 
     if !is_vetoed do
-      has_side_quest = team
+      has_side_quest =
+        team
         |> Map.get(:quests)
         |> Enum.any?(fn quest -> quest.type == "SIDE" && !quest.complete end)
 
@@ -50,44 +69,53 @@ defmodule Api.Route.Quests do
           %{content: "free", reward: 300}
         ]
 
-        {:ok, quest} = Team
+        {:ok, quest} =
+          Team
           |> Repo.get_by(password: Enum.at(auth, 0))
           |> Ecto.build_assoc(:quests)
           |> Ecto.Changeset.cast(
-            Map.merge(Enum.random(possible_quests), %{complete: false, type: "SIDE"}), [:content, :complete, :type, :reward]
+            Map.merge(Enum.random(possible_quests), %{complete: false, type: "SIDE"}),
+            [:content, :complete, :type, :reward]
           )
           |> Repo.insert()
 
         conn |> send_resp(200, Jason.encode!(quest))
       else
-        conn |> send_resp(401, Jason.encode!(%{ error: "You already have a side quest!" }))
+        conn |> send_resp(401, Jason.encode!(%{error: "You already have a side quest!"}))
       end
     else
-      conn |> send_resp(401, Jason.encode!(%{ error: "You're vetoing a quest right now!" }))
+      conn |> send_resp(401, Jason.encode!(%{error: "You're vetoing a quest right now!"}))
     end
   end
 
   get "/veto" do
     auth = get_req_header(conn, "authorization")
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
       |> Repo.preload(:quests)
 
     is_vetoed = DateTime.compare(team.last_veto, DateTime.utc_now()) == :gt
 
-    conn |> send_resp(200, Jason.encode!(%{ veto: team.last_veto, now: DateTime.utc_now(), status: is_vetoed }))
+    conn
+    |> send_resp(
+      200,
+      Jason.encode!(%{veto: team.last_veto, now: DateTime.utc_now(), status: is_vetoed})
+    )
   end
 
   post "/veto" do
     auth = get_req_header(conn, "authorization")
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
       |> Repo.preload(:quests)
 
     if team.last_veto != nil && DateTime.compare(team.last_veto, DateTime.utc_now()) != :gt do
-      quest = team
+      quest =
+        team
         |> Map.get(:quests)
         |> Enum.find(fn quest -> quest.type == "SIDE" && !quest.complete end)
 
@@ -95,39 +123,37 @@ defmodule Api.Route.Quests do
         changeset = Ecto.Changeset.change(quest, %{complete: true})
         Repo.update(changeset)
 
-        last_veto = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(20, :minute)
+        last_veto =
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(20 * 60, :second)
 
         changeset = Ecto.Changeset.change(team, %{last_veto: last_veto})
         {:ok, team} = Repo.update(changeset)
 
         conn |> send_resp(200, Jason.encode!(team))
       else
-        conn |> send_resp(404, Jason.encode!(%{ error: "No quest to veto!" }))
+        conn |> send_resp(404, Jason.encode!(%{error: "No quest to veto!"}))
       end
     else
-      conn |> send_resp(401, Jason.encode!(%{ error: "You're already vetoing a quest!" }))
+      conn |> send_resp(401, Jason.encode!(%{error: "You're already vetoing a quest!"}))
     end
   end
 
   post "/complete/:id" do
     auth = get_req_header(conn, "authorization")
-    {id, _} = conn.params["id"] |> Integer.parse
+    {id, _} = conn.params["id"] |> Integer.parse()
 
     quest =
       Quest
       |> Repo.get(id)
 
-    changeset = Ecto.Changeset.change(quest, %{complete: true})
-
-    {:ok, quest} = Repo.update(changeset)
-
-    if quest.complete == false do
-      team = Team
+    if quest.complete != true do
+      team =
+        Team
         |> Repo.get_by(password: Enum.at(auth, 0))
 
-
       if team.double && quest.type == "SIDE" do
-        changeset = Ecto.Changeset.change(team, %{balance: team.balance + (2 * quest.reward), double: false})
+        changeset =
+          Ecto.Changeset.change(team, %{balance: team.balance + 2 * quest.reward, double: false})
 
         Repo.update(changeset)
       else
@@ -136,9 +162,13 @@ defmodule Api.Route.Quests do
         Repo.update(changeset)
       end
 
-      conn |> send_resp(200, Jason.encode!(%{ status: true }))
+      changeset = Ecto.Changeset.change(quest, %{complete: true})
+
+      {:ok, quest} = Repo.update(changeset)
+
+      conn |> send_resp(200, Jason.encode!(%{status: true}))
     else
-      conn |> send_resp(400, Jason.encode!(%{ status: false }))
+      conn |> send_resp(400, Jason.encode!(%{status: false}))
     end
   end
 end

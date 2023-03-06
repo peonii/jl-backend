@@ -10,9 +10,27 @@ defmodule Api.Route.Team do
   get "/" do
     auth = get_req_header(conn, "authorization")
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
       |> Repo.preload(:quests)
+
+    conn |> send_resp(200, Jason.encode!(team))
+  end
+
+  post "/" do
+    name = conn.body_params["name"]
+    password = conn.body_params["password"]
+
+    team = %Team{
+      name: name,
+      password: password,
+      balance: 500,
+      double: false,
+      last_veto: DateTime.utc_now() |> DateTime.truncate(:second)
+    }
+
+    Repo.insert(team)
 
     conn |> send_resp(200, Jason.encode!(team))
   end
@@ -20,11 +38,12 @@ defmodule Api.Route.Team do
   get "/status" do
     auth = get_req_header(conn, "authorization")
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
       |> Repo.preload(:quests)
 
-    conn |> send_resp(200, Jason.encode!(%{ status: team != nil }))
+    conn |> send_resp(200, Jason.encode!(%{status: team != nil}))
   end
 
   post "/balance" do
@@ -32,7 +51,8 @@ defmodule Api.Route.Team do
 
     subtract = conn.body_params["subtract"]
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
 
     if team.balance - subtract >= 0 do
@@ -49,7 +69,8 @@ defmodule Api.Route.Team do
   post "/double" do
     auth = get_req_header(conn, "authorization")
 
-    team = Team
+    team =
+      Team
       |> Repo.get_by(password: Enum.at(auth, 0))
 
     changeset = Ecto.Changeset.change(team, %{double: true})
